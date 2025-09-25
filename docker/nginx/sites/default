@@ -1,0 +1,77 @@
+server {
+    listen 80;
+    server_name _;
+    root /var/www/public;
+    index index.php index.html;
+
+    # Security headers
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer-when-downgrade" always;
+    add_header Content-Security-Policy "default-src 'self' http: https: data: blob: 'unsafe-inline'" always;
+
+    # Client settings
+    client_max_body_size 50M;
+    client_body_timeout 60s;
+
+    # Main location
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # PHP-FPM configuration
+    location ~ \.php$ {
+        fastcgi_pass app:9000;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        include fastcgi_params;
+        fastcgi_read_timeout 300;
+        fastcgi_send_timeout 300;
+        fastcgi_connect_timeout 60;
+        fastcgi_buffers 16 16k;
+        fastcgi_buffer_size 32k;
+    }
+
+    # API rate limiting
+    location /api/ {
+        limit_req zone=api burst=20 nodelay;
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # Upload endpoint with special rate limiting
+    location /api/contacts/upload {
+        limit_req zone=upload burst=5 nodelay;
+        try_files $uri $uri/ /index.php?$query_string;
+    }
+
+    # Static assets with caching
+    location ~* \.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        try_files $uri =404;
+    }
+
+    # Storage files
+    location /storage {
+        alias /var/www/storage/app/public;
+        expires 30d;
+        add_header Cache-Control "public";
+        try_files $uri =404;
+    }
+
+    # Deny access to sensitive files
+    location ~ /\.(?!well-known).* {
+        deny all;
+    }
+
+    location ~ ^/(\.env|\.git|composer\.(json|lock)|package\.json|docker|storage/logs) {
+        deny all;
+    }
+
+    # Health check endpoint
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+}
