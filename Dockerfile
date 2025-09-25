@@ -1,23 +1,27 @@
 # ==========================
-# Etapa 1: Build dos assets com Node
+# Stage 1: Build frontend com Node
 # ==========================
 FROM node:20 AS node-build
+
 WORKDIR /var/www
 
 # Copiar package.json e package-lock.json
 COPY package*.json ./
 
-# Instalar dependências do Node
+# Instalar dependências incluindo dev (vite está como devDependency)
 RUN npm ci
+
+# Opcional: instalar vite globalmente para garantir
+RUN npm install -g vite
 
 # Copiar todo o projeto
 COPY . .
 
-# Build dos assets (Vite)
+# Rodar build do Vite
 RUN npm run build
 
 # ==========================
-# Etapa 2: PHP-FPM com Laravel
+# Stage 2: PHP-FPM com Laravel
 # ==========================
 FROM php:8.2-fpm
 
@@ -35,14 +39,15 @@ COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 # Copiar código PHP + assets buildados do Node
 COPY --from=node-build /var/www /var/www
 
-# Instalar dependências PHP (sem dev)
+# Instalar dependências PHP sem dev
 RUN composer install --no-dev --optimize-autoloader
 
-# Ajustar permissões
+# Ajustar permissões do Laravel
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache \
     && chmod -R 775 /var/www/storage /var/www/bootstrap/cache
 
 # Expor porta do PHP-FPM
 EXPOSE 9000
 
+# Comando padrão
 CMD ["php-fpm"]
