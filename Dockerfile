@@ -1,16 +1,16 @@
 # ==========================
 # Etapa 1: Build dos assets com Node
 # ==========================
-FROM node:18 AS build
+FROM node:20 AS build
 WORKDIR /var/www
 
-# Copiar arquivos de dependências
+# Copiar package.json e lockfile para instalar dependências
 COPY package*.json ./
 
-# Instalar dependências (inclui devDependencies, necessárias para vite/laravel-vite-plugin)
-RUN npm install
+# Instalar dependências exatamente como no lockfile
+RUN npm ci
 
-# Copiar todo o projeto
+# Copiar o resto do projeto
 COPY . .
 
 # Rodar build do Vite
@@ -37,18 +37,17 @@ RUN apt-get update && apt-get install -y \
 # Instalar Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Copiar código-fonte do projeto + assets já compilados
+# Copiar código do projeto e assets já buildados
 COPY --from=build /var/www /var/www
 
 # Instalar dependências PHP (sem dev)
 RUN composer install --no-dev --optimize-autoloader
 
-# Definir permissões para storage e bootstrap/cache
+# Ajustar permissões
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache \
     && chmod -R 775 /var/www/storage /var/www/bootstrap/cache
 
-# Porta exposta pelo PHP-FPM
+# Expor porta do PHP-FPM
 EXPOSE 9000
 
-# Comando padrão (pode ser ajustado dependendo do setup nginx/php-fpm)
 CMD ["php-fpm"]
