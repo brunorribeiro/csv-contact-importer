@@ -38,8 +38,6 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.prod
-    ports:
-      - "8080:9000"
     environment:
       APP_NAME: "CSV Contact Importer"
       APP_ENV: production
