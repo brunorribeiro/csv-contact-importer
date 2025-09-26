@@ -1,71 +1,51 @@
-FROM php:8.1-fpm
+# ==========================
+# Etapa 1: Build dos assets com Node
+# ==========================
+FROM node:20 AS build
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    git \
-    curl \
-    libpng-dev \
-    libonig-dev \
-    libxml2-dev \
-    zip \
-    unzip \
-    nodejs \
-    npm \
-    supervisor \
-    default-mysql-client \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install PHP extensions
-RUN docker-php-ext-install pdo_mysql mbstring exif pcntl bcmath gd
-
-# Get latest Composer
-COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
-
-# Set working directory
 WORKDIR /var/www
 
-# Copy composer files first for better caching
-COPY composer.json composer.lock ./
-RUN composer install --no-dev --no-scripts --no-autoloader --optimize-autoloader
-
-# Copy package.json for npm caching
+# Copiar package.json e lockfile
 COPY package*.json ./
-RUN npm ci --only=production
 
-# Copy application code
+# Instalar dependências Node
+RUN npm ci
+
+# Copiar o restante do projeto
 COPY . .
 
-# Complete composer installation
-RUN composer dump-autoload --optimize
+# Rodar build do Vite
+RUN npm run build
 
-# Build frontend assets
-RUN npm run build && npm cache clean --force
 
-# Create required directories and set permissions
-RUN mkdir -p storage/logs \
-    storage/framework/cache \
-    storage/framework/sessions \
-    storage/framework/views \
-    storage/app/csv_imports \
-    bootstrap/cache \
-    && chown -R www-data:www-data /var/www \
-    && chmod -R 755 /var/www/storage \
-    && chmod -R 755 /var/www/bootstrap/cache
+# ==========================
+# Etapa 2: PHP-FPM + Laravel
+# ==========================
+FROM php:8.2-fpm
 
-# Copy supervisor configuration
-COPY docker/supervisord.prod.conf /etc/supervisor/conf.d/supervisord.conf
+WORKDIR /var/www
 
-# Copy entrypoint script
-COPY docker/entrypoint.prod.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
+# Instalar dependências do sistema e extensões PHP
+RUN apt-get update && apt-get install -y \
+    git \
+    unzip \
+    libpq-dev \
+    libzip-dev \
+    zip \
+    && docker-php-ext-install pdo pdo_mysql zip \
+    && rm -rf /var/lib/apt/lists/*
 
-# Expose port 9000 for PHP-FPM
-EXPOSE 9000
+# Instalar Composer
+COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD php artisan tinker --execute="echo 'OK';" || exit 1
+# Copiar código do projeto + assets já buildados
+COPY --from=build /var/www /var/www
 
-# Start supervisor
-ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+# Instalar dependências PHP
+RUN composer install --no-dev --optimize-autoloader
+
+# Ajustar permissões
+RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache \
+    && chmod -R 775 /var/www/storage /var/www/bootstrap/cache
+
+CMD ["php-fpm"]
