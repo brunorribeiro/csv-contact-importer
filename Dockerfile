@@ -1,27 +1,25 @@
 # ==========================
-# Stage 1: Build frontend com Node
+# Etapa 1: Build dos assets com Node
 # ==========================
-FROM node:20 AS node-build
+FROM node:20 AS build
 
 WORKDIR /var/www
 
-# Copiar package.json e package-lock.json
+# Copiar package.json e lockfile
 COPY package*.json ./
 
-# Instalar dependências incluindo dev (vite está como devDependency)
+# Instalar dependências Node
 RUN npm ci
 
-# Opcional: instalar vite globalmente para garantir
-RUN npm install -g vite
-
-# Copiar todo o projeto
+# Copiar o restante do projeto
 COPY . .
 
 # Rodar build do Vite
 RUN npm run build
 
+
 # ==========================
-# Stage 2: PHP-FPM com Laravel
+# Etapa 2: PHP-FPM + Laravel
 # ==========================
 FROM php:8.2-fpm
 
@@ -29,25 +27,28 @@ WORKDIR /var/www
 
 # Instalar dependências do sistema e extensões PHP
 RUN apt-get update && apt-get install -y \
-    git unzip libpq-dev libzip-dev zip \
+    git \
+    unzip \
+    libpq-dev \
+    libzip-dev \
+    zip \
     && docker-php-ext-install pdo pdo_mysql zip \
     && rm -rf /var/lib/apt/lists/*
 
 # Instalar Composer
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 
-# Copiar código PHP + assets buildados do Node
-COPY --from=node-build /var/www /var/www
+# Copiar código do projeto + assets já buildados
+COPY --from=build /var/www /var/www
 
-# Instalar dependências PHP sem dev
+# Instalar dependências PHP
 RUN composer install --no-dev --optimize-autoloader
 
-# Ajustar permissões do Laravel
+# Ajustar permissões
 RUN chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache \
     && chmod -R 775 /var/www/storage /var/www/bootstrap/cache
 
 # Expor porta do PHP-FPM
 EXPOSE 9000
 
-# Comando padrão
 CMD ["php-fpm"]
